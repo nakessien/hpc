@@ -17,18 +17,18 @@ import pywt
 
 # split a univariate dataset into train/test sets
 def split_dataset(data):
-    # split into standard weeks
+    # save last 1000 for test/validation
     train, test = data[0:-1000], data[-1000:]
-    # restructure into windows of weekly data
+    # restructure into windows 
     train = array(split(train, len(train) / 1))
     test = array(split(test, len(test) / 1))
     return train, test
 
 
-# evaluate one or more weekly forecasts against expected values
+# evaluate forecasts against expected values
 def evaluate_forecasts(actual, predicted):
     scores = list()
-    # calculate an RMSE score for each day
+    # calculate an RMSE score for each prediction
     for i in range(actual.shape[1]):
         # calculate mse
         mse = mean_squared_error(actual[:, i], predicted[:, i])
@@ -44,15 +44,15 @@ def evaluate_forecasts(actual, predicted):
     score = sqrt(s / (actual.shape[0] * actual.shape[1]))
     return score, scores
 
+
+
 # summarize scores
-
-
 def summarize_scores(name, score, scores):
     s_scores = ', '.join(['%.1f' % s for s in scores])
     print('%s: [%.3f] %s' % (name, score, s_scores))
 
 
-# convert history into inputs and outputs
+# convert univariate data into inputs and outputs (i.e. supervised learning)
 def to_supervised(train, n_input, n_out=1):
     # flatten data
     data = train.reshape((train.shape[0] * train.shape[1], train.shape[2]))
@@ -111,11 +111,11 @@ def forecast(model, history, n_input):
     # flatten data
     data = array(history)
     data = data.reshape((data.shape[0] * data.shape[1], data.shape[2]))
-    # retrieve last observations for input data
+    # retrieve last n observations for input data
     input_x = data[-n_input:, 0]
     # reshape into [1, n_input, 1]
     input_x = input_x.reshape((1, len(input_x), 1))
-    # forecast the next week
+    # forecast the next time step
     yhat = model.predict(input_x, verbose=0)
     # we only want the vector forecast
     yhat = yhat[0]
@@ -126,42 +126,46 @@ def forecast(model, history, n_input):
 def evaluate_model(train, test, n_input):
     # fit model
     model = build_model(train, n_input)
-    # history is a list of weekly data
+    # history is a list of input training data
     history = [x for x in train]
-    # walk-forward validation over each week
+    # walk-forward validation over each test data point
     predictions = list()
     for i in range(len(test)):
-        # predict the week
+        # predict the next timestep
         yhat_sequence = forecast(model, history, n_input)
         # store the predictions
         predictions.append(yhat_sequence)
-        # get real observation and add to history for predicting the next week
+        # get real observation and add to history for predicting the next timestep
         history.append(test[i, :])
-    # evaluate predictions days for each week
+    # evaluate predictions days for each timestep
     predictions = array(predictions)
     score, scores = evaluate_forecasts(test[:, :, 0], predictions)
+    #retrieve test dataset for computing rmse
     test1 = testdata.reshape((testdata.shape[0] * testdata.shape[1]), 1)
+    #reshape test dataset
     YPred = predictions.reshape((predictions.shape[0] * predictions.shape[1], 1))
+    #de-normalize
     YPred = sig * YPred + mu
     rmse = sqrt(mean(YPred - test1)**2)
     print('CNNLSTM1D RMSE: > %.3f' % rmse)
     YPred = array(YPred)
     # DataFrame(YPred).to_csv('/Users/nakessien/Downloads/pred.csv')
     YPred = YPred.reshape(YPred.shape[0], 1)
+    #stack pred and true values
     df = stack((YPred, test1))
     df = df.transpose()
     df = df.reshape(df.shape[1], 2)
+    #save pred/true stack to file
     DataFrame(df).to_csv('RESULTS\\Spred1-CNNLSTM_AE(Crown-10_minute).csv')
     model_name = 'CNNLSTM.h5'
+    #save model for transfer learning in future
     model.save(model_name)
     return score, scores
 
 
 # load the new file
 dataset = read_csv('..\\DATA\\BodyMaker\\clean_bm19.csv', header=0, index_col=0)
-#extract wavelet
-#cA, cD = pywt.dwt(dataset, 'haar')
-#dataset = DataFrame(cA)
+
 # split into train and test
 train, test = split_dataset(dataset.values)
 testdata = test
